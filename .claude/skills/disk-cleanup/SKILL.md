@@ -29,7 +29,7 @@ Categorize each finding → act
 Next report or re-scan
 ```
 
-## Analysis: The Five Categories
+## Analysis: The Six Categories
 
 For each large directory in a report, classify into one of:
 
@@ -73,7 +73,75 @@ cmd /c "dir /AL C:\Users\...\AppName"
 
 **Never junction:** Files in active use, system-critical paths, or when backups already exist at target (keep backups intact).
 
-### 3. Requires Caution
+### 3. Migrate Docker Desktop WSL Data
+
+Docker Desktop on Windows stores its data in WSL2 virtual disks under `%LOCALAPPDATA%\Docker\wsl`. This can grow large (8GB+) and should be moved to D:.
+
+**First, determine which version structure is in use:**
+
+```powershell
+wsl -l -v
+```
+
+**Scenario A — Single distro (newer Docker, merged `docker-desktop`):**
+
+If only `docker-desktop` appears (no separate `docker-desktop-data`):
+
+```powershell
+# 1. Quit Docker Desktop, then shut down WSL
+wsl --shutdown
+
+# 2. Export the distro to D: (takes minutes, no progress bar)
+mkdir D:\DockerWSL
+wsl --export docker-desktop D:\docker-desktop.tar
+
+# 3. Unregister C: instance (frees C: space immediately)
+wsl --unregister docker-desktop
+
+# 4. Import to D:
+wsl --import docker-desktop D:\DockerWSL D:\docker-desktop.tar --version 2
+
+# 5. Verify Docker works, then delete the temp tar
+rm D:\docker-desktop.tar
+```
+
+**Scenario B — Dual distro (older Docker, separate `docker-desktop-data`):**
+
+If both `docker-desktop` and `docker-desktop-data` appear, migrate the `-data` one (it's the large one):
+
+```powershell
+wsl --export docker-desktop-data D:\docker-desktop-data.tar
+wsl --unregister docker-desktop-data
+wsl --import docker-desktop-data D:\DockerWSL D:\docker-desktop-data.tar --version 2
+```
+
+**Scenario C — disk/main split (newest Docker with built-in path setting):**
+
+If `C:\Users\...\Docker\wsl` has `disk\docker_data.vhdx` and `main\ext4.vhdx`:
+
+```
+C:.\Docker\wsl
+├─disk\
+│    docker_data.vhdx    ← data (large, can be moved)
+└─main\
+     ext4.vhdx           ← system engine (small, KEEP on C:)
+```
+
+This means Docker already uses the built-in `Settings → Resources → Advanced → Disk image location`. Verify in Docker Desktop GUI where the path points. If already pointing to D:, the C: copy is a stale leftover.
+
+```powershell
+# 1. Quit Docker Desktop + wsl --shutdown
+
+# 2. Rename C: copy as safety test (don't delete yet)
+ren C:\Users\mrsim\AppData\Local\Docker\wsl\disk\docker_data.vhdx docker_data.vhdx.bak
+
+# 3. Restart Docker — if works normally, delete the .bak
+# NEVER delete main\ext4.vhdx — that's Docker's system engine
+```
+
+**Verification:** After any scenario, `wsl -l -v` should show the distro as `Running` after Docker restarts, and images/containers should be intact.
+
+### 4. Requires Caution
 
 **Characteristics:** User data that might contain drafts, active toolchains that are in PATH.
 
@@ -85,7 +153,7 @@ cmd /c "dir /AL C:\Users\...\AppName"
 
 **Rule:** If unsure, always ask before deleting.
 
-### 4. Cannot Delete
+### 5. Cannot Delete
 
 **Characteristics:** Currently running software, system components.
 
@@ -93,7 +161,7 @@ cmd /c "dir /AL C:\Users\...\AppName"
 - `System32`, `Windows`, `Program Files` system dirs
 - WinGet package for currently running tools (e.g., Claude Code)
 
-### 5. Junction Already Exists
+### 6. Junction Already Exists
 
 **Symptom:** SpaceSniffer shows C: path with data, but `du` shows 0 or `dir /AL` shows a reparse point.
 
@@ -121,3 +189,6 @@ fsutil reparsepoint query "C:\path\to\dir"
 | Deleting toolchains in PATH | Check `echo $PATH` first |
 | `du -sh` returns 0 on Windows | Use `ls -la` or PowerShell `Get-ChildItem` to verify |
 | Cross-drive `cmd /c move` loses data | Use `cp -a` via bash or `robocopy` for cross-drive moves |
+| Deleting `main\ext4.vhdx` to free space | Never delete — it's Docker's system engine, not data |
+| Using `wsl --export/--import` on disk/main-split Docker | Check Docker's `Settings → Resources → Advanced → Disk image location` first; if path already points to D:, just rename stale C: copy |
+| `wsl --export` seems hung | It's not — large VHDX exports have no progress bar, wait several minutes |
