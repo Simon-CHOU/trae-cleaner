@@ -6,8 +6,8 @@
 
 ## 总体成果
 
-  C:\Users\mrsim 总计:  80.1 GB (Before) → 54.2 GB (After, 实际物理占用)
-  净释放 C 盘:          ~25.9 GB
+  C:\Users\mrsim 总计:  80.1 GB (Before) → 47.3 GB (After, 实际物理占用)
+  净释放 C 盘:          ~32.8 GB
 
   (SpaceSniffer After 报告显示 69.8 GB, 其中 15.6 GB 为 Trae junction 映射,
    物理数据已在 D:\Trae\Data\Trae, 不计入 C 盘实际占用)
@@ -23,10 +23,11 @@
 | Firefox 浏览器缓存+站点数据   | 6.8 GB     | 840 MB      | 6.0 GB   | 浏览器设置清理   |
 | NVIDIA DXCache 着色器缓存    | 4.0 GB     | 1.5 MB      | 4.0 GB   | 直接删除        |
 | IntelliJ IDEA 旧版 2025.2    | 2.1 GB     | 0           | 2.1 GB   | 直接删除        |
-| 累计                        |            |             | ~36.1 GB |                |
+| Windows LiveKernel WATCHDOG  | 6.9 GB     | 0           | 6.9 GB   | elevated 删除   |
+| 累计                        |            |             | ~43.0 GB |                |
 
 注: Trae (16 GB) 和 Docker (8 GB) 通过迁移释放 C 盘但保留在 D 盘, 合计 24 GB
-    其余为纯删除释放, 合计 ~12 GB
+    其余为纯删除释放, 合计 ~19 GB
 
 ================================================================================
 
@@ -61,6 +62,12 @@
    保留: IntelliJIdea2026.1 (当前使用版本)
    释放: plugins 1.3GB + jcef_cache 206MB + log 192MB + index 177MB + caches 158MB
 
+### 6. Windows LiveKernel WATCHDOG 转储
+   文件: C:\Windows\LiveKernelReports\WATCHDOG-20260610-0345.dmp
+   清理前: 6.9 GB
+   清理后: 0
+   方法: takeown + icacls + del (需管理员权限, 系统运行正常则无需保留)
+
 ================================================================================
 
 ## 未处理项目 (决策: 保留)
@@ -80,5 +87,10 @@
     (可进一步清理历史 snapshot)
   - IntelliJIdea2026.1\log\: 209 MB (可安全删除, IDEA 会重建)
   - IntelliJIdea2026.1\jcef_cache\: 247 MB (浏览器缓存, 可安全删除)
+
+================================================================================
+
+  更新记录:
+  2026-06-10 04:58 — 追加 LiveKernelReport WATCHDOG dump 清理 (+6.9 GB, 累计 ~32.8 GB)
 
 ================================================================================
