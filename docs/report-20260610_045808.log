@@ -92,5 +92,74 @@
 
   更新记录:
   2026-06-10 04:58 — 追加 LiveKernelReport WATCHDOG dump 清理 (+6.9 GB, 累计 ~32.8 GB)
+  2026-06-10 05:15 — 追加经验教训总结
+
+================================================================================
+
+## 经验教训总结
+
+### 方法论
+
+1. **SpaceSniffer 循环驱动清理**
+   SpaceSniffer Export (Group by Folder) → 读 txt 找最大项 → 分类判断 →
+   执行(删/迁/留) → 下一个 report。每个 report 是独立的决策单元，
+   循环推进比一次性计划更高效。
+
+2. **六分类法**
+   将所有大目录归入六类之一：安全删除 / Junction 迁移 / WSL 迁移 /
+   需谨慎 / 不能删 / 已是 Junction。分类对了，操作就不会出错。
+
+3. **先问再删，不猜**
+   - MinGW 在 PATH 中 → 可能是编译工具链 → 问用户
+   - bilibili OPFS 存储 → 可能是投稿草稿 → 问用户
+   - Docker main\ext4.vhdx → 系统引擎 → 绝对不能删
+
+### 技术踩坑
+
+4. **SpaceSniffer 跟随 Junction 显示**
+   Trae 迁移到 D: 后，SpaceSniffer 仍在 C: 树下显示 15.6 GB。
+   判断方法: `fsutil reparsepoint query` 确认物理位置。
+   结论: 不要只看 SpaceSniffer 的 C: 路径就认为数据在 C 盘。
+
+5. **Windows 上 `du -sh` 返回 0**
+   某些 Windows 目录在 bash 下 `du` 无法统计。改用 `ls -la` 或
+   PowerShell `Get-ChildItem` 验证。
+
+6. **跨 Shell 命令转义陷阱**
+   bash → cmd → PowerShell 的多层嵌套中，环境变量 (`%APPDATA%`)、
+   反斜杠转义极易丢失。方案: 直接使用 bash 的 `/c/Users/...` 路径，
+   或先写脚本文件再执行，避免嵌套引号地狱。
+
+7. **LiveKernelReports 需要三重权限**
+   系统 dmp 文件不是普通删除能处理的。需要:
+   `takeown /a` → `icacls /grant Administrators:F` → `del /f`
+   且必须通过 elevated `Start-Process -Verb RunAs`。
+
+8. **Docker Desktop 有三种版本结构**
+   老版(双 distro)、新版(单 distro)、最新版(disk/main 分离)。
+   必须先 `wsl -l -v` 确认版本，再选对迁移命令。
+   最新版用 `wsl --export/--import` 反而会破坏官方结构。
+
+### 工程化
+
+9. **Skill 固化流程**
+   将清理方法论写成 `disk-cleanup` skill 后，下次同类任务不必
+   从零开始。skill 本身就是 TDD 的产物 —— 先在实践中验证有效，
+   再抽象为可复用文档。
+
+10. **Pre-commit Hook 自触发陷阱**
+    编写 `/sanitize` skill 时，示例命令中的模式串被自己的 pre-commit
+    hook 拦截（文档示例字面匹配了 SENSITIVE_PATTERNS 中的检测词）。
+    教训: 安全工具的文档示例必须用占位符（`<SENSITIVE_PATTERN>`），
+    不能包含真实检测词。本段文字本身也遭遇了同样的自触发。
+
+11. **隐私审计 → 防御落地**
+    审计发现 `mrsim` 和 `p6q5aw7q` 不敏感，但不能就此结束。
+    借真实的审计样本，把 pre-commit hook + `/sanitize` skill +
+    CLAUDE.md 白名单三层防线一次性建好，以后有新的敏感词只改一行配置。
+
+12. **提交粒度**
+    每个独立动作一个 commit（skill 创建、report 更新、hook 部署），
+    不混在一起。这样 revert、blame、cherry-pick 都清晰。
 
 ================================================================================
