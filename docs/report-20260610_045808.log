@@ -1,0 +1,84 @@
+================================================================================
+  C 盘清理优化报告
+  时间: 2026-06-10
+  方法: SpaceSniffer Export (Group by Folder) → 分析分类 → 执行清理
+================================================================================
+
+## 总体成果
+
+  C:\Users\mrsim 总计:  80.1 GB (Before) → 54.2 GB (After, 实际物理占用)
+  净释放 C 盘:          ~25.9 GB
+
+  (SpaceSniffer After 报告显示 69.8 GB, 其中 15.6 GB 为 Trae junction 映射,
+   物理数据已在 D:\Trae\Data\Trae, 不计入 C 盘实际占用)
+
+================================================================================
+
+## 逐项对比
+
+| 项目                        | Before (C:) | After (C:)  | 释放     | 操作方式        |
+|-----------------------------|------------|-------------|----------|----------------|
+| Trae IDE roaming 数据        | ~16 GB     | 0 (junction)| 16.0 GB  | junction 迁移   |
+| Docker Desktop WSL 磁盘      | 8.0 GB     | ~0          | 8.0 GB   | WSL export/import |
+| Firefox 浏览器缓存+站点数据   | 6.8 GB     | 840 MB      | 6.0 GB   | 浏览器设置清理   |
+| NVIDIA DXCache 着色器缓存    | 4.0 GB     | 1.5 MB      | 4.0 GB   | 直接删除        |
+| IntelliJ IDEA 旧版 2025.2    | 2.1 GB     | 0           | 2.1 GB   | 直接删除        |
+| 累计                        |            |             | ~36.1 GB |                |
+
+注: Trae (16 GB) 和 Docker (8 GB) 通过迁移释放 C 盘但保留在 D 盘, 合计 24 GB
+    其余为纯删除释放, 合计 ~12 GB
+
+================================================================================
+
+## 详细操作记录
+
+### 1. Trae IDE 数据迁移 (junction)
+   源: C:\Users\mrsim\AppData\Roaming\Trae
+   目标: D:\Trae\Data\Trae
+   方法: cp -a → rm source → mklink /J
+   验证: fsutil reparsepoint query 确认为 mount point (0xa0000003)
+   备份: D:\TraeRoaming, D:\TraeRoaming_backup_20260413_034209 未动
+
+### 2. Docker Desktop WSL 数据迁移
+   源: C:\Users\mrsim\AppData\Local\Docker\wsl\disk (docker_data.vhdx)
+   目标: D:\DockerWSL
+   方法: wsl --export → wsl --unregister → wsl --import
+   After 确认: C 盘仅余 ~52 MB 日志文件
+
+### 3. Firefox 浏览器数据清理
+   清理前 storage: 6.8 GB (member.bilibili.com OPFS 3.6GB + feishu.cn cache 903MB)
+   清理后 storage: 398.7 MB
+   方法: Firefox 设置 → 隐私与安全 → Cookie 和网站数据 → 管理数据 → 移除
+
+### 4. NVIDIA 着色器缓存
+   文件: C:\Users\mrsim\AppData\Local\NVIDIA\DXCache
+   清理前: 4.0 GB (含单个 2GB 文件 f629a9c90d874dae.nvph)
+   清理后: 1.5 MB
+   方法: rm -f 删除 .nvph 缓存文件 (驱动会自动重建)
+
+### 5. IntelliJ IDEA 旧版本删除
+   删除: C:\Users\mrsim\AppData\Local\JetBrains\IdeaIC2025.2 (Community Edition)
+   保留: IntelliJIdea2026.1 (当前使用版本)
+   释放: plugins 1.3GB + jcef_cache 206MB + log 192MB + index 177MB + caches 158MB
+
+================================================================================
+
+## 未处理项目 (决策: 保留)
+
+| 项目                        | 大小       | 保留原因                    |
+|-----------------------------|-----------|----------------------------|
+| WinGet MinGW (POSIX UCRT)   | 912 MB    | 在 PATH 中, 可能用于编译     |
+| WinGet Claude Code          | 212 MB    | 正在运行的会话依赖           |
+| IntelliJIdea2026.1 plugins  | 1.7 GB    | 当前版本活跃插件             |
+| Docker\wsl\main\ext4.vhdx   | ~115 MB   | Docker 系统引擎, 不能删      |
+
+================================================================================
+
+## 后续可优化项
+
+  - Trae\TraeRoaming\Trae\ModularData\ai-agent\snapshot\: 12 GB git 快照缓存
+    (可进一步清理历史 snapshot)
+  - IntelliJIdea2026.1\log\: 209 MB (可安全删除, IDEA 会重建)
+  - IntelliJIdea2026.1\jcef_cache\: 247 MB (浏览器缓存, 可安全删除)
+
+================================================================================
