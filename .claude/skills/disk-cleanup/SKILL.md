@@ -43,8 +43,27 @@ For each large directory in a report, classify into one of:
 | `*/log/*`, `*/logs/*` | IDE logs, telemetry logs | `rm -rf` |
 | Old version dirs (different name from current) | `IdeaIC2025.2` when on `IntelliJIdea2026.1` | `rm -rf` |
 | HTTP disk cache | `cache/morgue/*` in Firefox profile | Delete via browser settings (safer) |
+| `C:\Windows\LiveKernelReports\*.dmp` | `WATCHDOG-*.dmp`, kernel crash dumps | Elevated delete (see below) |
 
 **Rule:** If the system/app will auto-regenerate it on next run, it's safe to delete.
+
+**LiveKernelReports (WATCHDOG dumps):**
+
+These are Windows kernel watchdog timeout dumps. They only exist for post-crash analysis. If the system is running normally, they are safe to delete. Requires admin privileges:
+
+```powershell
+# 1. Take ownership + grant permission, then delete
+takeown /f "C:\Windows\LiveKernelReports\WATCHDOG-*.dmp" /a
+icacls "C:\Windows\LiveKernelReports\WATCHDOG-*.dmp" /grant Administrators:F
+del /f "C:\Windows\LiveKernelReports\WATCHDOG-*.dmp"
+
+# Or via elevated cmd in one shot:
+Start-Process cmd -ArgumentList '/c', 'takeown', '/f',
+  'C:\Windows\LiveKernelReports\WATCHDOG-*.dmp', '/a', '&&',
+  'icacls', 'C:\Windows\LiveKernelReports\WATCHDOG-*.dmp',
+  '/grant', 'Administrators:F', '&&',
+  'del', '/f', 'C:\Windows\LiveKernelReports\WATCHDOG-*.dmp' -Verb RunAs -Wait
+```
 
 ### 2. Migrate via Junction
 
@@ -192,3 +211,5 @@ fsutil reparsepoint query "C:\path\to\dir"
 | Deleting `main\ext4.vhdx` to free space | Never delete — it's Docker's system engine, not data |
 | Using `wsl --export/--import` on disk/main-split Docker | Check Docker's `Settings → Resources → Advanced → Disk image location` first; if path already points to D:, just rename stale C: copy |
 | `wsl --export` seems hung | It's not — large VHDX exports have no progress bar, wait several minutes |
+| `rm` fails on LiveKernelReports with "Permission denied" | Use `takeown` + `icacls` via elevated `Start-Process -Verb RunAs` — these are system-protected files |
+| `rm` reports WATCHDOG `.dmp` as "Is a directory" | Bash on Windows may misinterpret system dumps; use `cmd /c del /f` instead |
