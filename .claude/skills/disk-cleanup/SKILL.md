@@ -14,10 +14,13 @@ Iterative loop: scan with SpaceSniffer → export txt → analyze → act → ne
 - Windows C: drive is full, need to free space systematically
 - Have multiple SpaceSniffer `.txt` reports exported (Group by Folder)
 - Want data-driven decisions about what's safe to delete vs. migrate
+- Want to clean stale build-tool caches (Maven, Gradle, npm, Cargo, pip, etc.) based on 30-day last-access staleness
 
 ## Core Loop
 
 ```
+Optional: scan-caches.ps1 -Report <report.txt>  (cache staleness from SpaceSniffer data)
+    ↓
 Scan drive (SpaceSniffer)
     ↓
 Export txt report (Group by Folder)
@@ -191,8 +194,59 @@ Verify with:
 fsutil reparsepoint query "C:\path\to\dir"
 ```
 
+### 7. Build-Tool Cache Cleanup (30-Day Staleness)
+
+Script: `scan-caches.ps1` — takes a SpaceSniffer "Group by Folder" report as input, cross-references known cache paths, checks filesystem staleness, and optionally moves fully-stale cache directories to the Recycle Bin.
+
+**Design rationale:** SpaceSniffer has already scanned the entire disk. The script parses that report (cheap — in-memory regex) to identify which cache paths exist and their sizes, then does a lightweight staleness check only on those specific directories. No redundant disk scanning.
+
+**Covered caches:**
+
+| Tool | Path |
+|------|------|
+| Maven repository | `%USERPROFILE%\.m2\repository` |
+| Maven wrapper | `%USERPROFILE%\.m2\wrapper` |
+| Gradle caches | `%USERPROFILE%\.gradle\caches` |
+| npm cache | `%LOCALAPPDATA%\npm-cache` |
+| pnpm cache | `%LOCALAPPDATA%\pnpm-cache` |
+| Yarn (classic) | `%LOCALAPPDATA%\Yarn` |
+| Yarn (berry) | `%USERPROFILE%\.yarn\berry\cache` |
+| Cargo registry | `%USERPROFILE%\.cargo\registry` |
+| Cargo git | `%USERPROFILE%\.cargo\git` |
+| pip cache | `%LOCALAPPDATA%\pip\cache` |
+| uv cache | `%LOCALAPPDATA%\uv\cache` |
+
+**Staleness detection:**
+
+For each existing cache directory, the script finds the **newest LastWriteTime** anywhere in the directory tree. If even the newest file is older than 30 days, the entire directory is "fully stale" — it hasn't been touched by any tool in a month and is safe to recycle as a unit. If any file is fresher than 30 days, the cache is "active" and is left alone.
+
+This is simpler and faster than the previous per-file enumeration: one `Get-ChildItem -Recurse` per cache root, keeping only the maximum timestamp.
+
+**Workflow:**
+
+```bash
+# Prerequisite: export a SpaceSniffer "Group by Folder" .txt report
+
+# 1. Dry-run: parses report, checks staleness, prints verdict
+powershell -File .claude/skills/disk-cleanup/scan-caches.ps1 -Report "report.txt"
+
+# 2. Review the output, then execute
+powershell -File .claude/skills/disk-cleanup/scan-caches.ps1 -Report "report.txt" -Execute
+```
+
+**What Execute does:**
+- Moves fully-stale cache directories to the **Recycle Bin** via `SHFileOperationW` with `FOF_ALLOWUNDO` — not permanent delete.
+- Active caches (anything touched in the last 30 days) are never touched.
+- Items can be restored from the Recycle Bin if needed.
+
+**Safety:**
+- Only touches directories the SpaceSniffer report confirms exist AND the filesystem confirms are fully stale (>30 days since newest file).
+- Never touches source code, config files, or toolchain binaries.
+- `FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT` suppresses dialogs; errors go to stderr.
+
 ## Execution Order
 
+0. **Run build-tool cache scan** — `scan-caches.ps1 -Report <report.txt>` to identify stale Maven/Gradle/npm/Cargo/pip caches, then `-Execute` after review
 1. Start with the **largest** report item first (biggest win)
 2. Delete safe items immediately
 3. Migrate eligible items one at a time (copy → verify → junction → confirm)
@@ -213,3 +267,5 @@ fsutil reparsepoint query "C:\path\to\dir"
 | `wsl --export` seems hung | It's not — large VHDX exports have no progress bar, wait several minutes |
 | `rm` fails on LiveKernelReports with "Permission denied" | Use `takeown` + `icacls` via elevated `Start-Process -Verb RunAs` — these are system-protected files |
 | `rm` reports WATCHDOG `.dmp` as "Is a directory" | Bash on Windows may misinterpret system dumps; use `cmd /c del /f` instead |
+| `scan-caches.ps1` says "access-time tracking: disabled" | Normal on Windows 10+ — the write/create fallback is used; cache staleness detection still works |
+| `scan-caches.ps1` reports 0 expired in a large cache | The cache may have been recently populated; check `ThresholdDays` or re-run after 30+ days of inactivity |
