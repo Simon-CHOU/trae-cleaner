@@ -1,0 +1,52 @@
+#!/bin/bash
+# ============================================================
+#  Privacy & Sanitization Gate
+#  Scans staged .txt / .log / .md files for sensitive patterns
+#  before allowing a commit through.
+# ============================================================
+
+# ---------- 1. Define sensitive patterns (grep ERE, | separated) ----------
+# IMPORTANT: Use single quotes — \\ in the regex matches a literal backslash.
+#   C:\\Users\\(Name1|Name2)\\  →  matches C:\Users\Name1\ or C:\Users\Name2\
+# Non-sensitive (allowed): mrsim, p6q5aw7q.default-release
+SENSITIVE_PATTERNS='C:\\Users\\(Admin|RealName)\\|/Users/realname|secret_keyword|SECRET_TOKEN'
+
+# ---------- 2. Get staged files ----------
+STAGED_FILES=$(git diff --cached --name-only)
+
+if [ -z "$STAGED_FILES" ]; then
+    exit 0
+fi
+
+# ---------- 3. Optional: notify when large scan exports are staged ----------
+if echo "$STAGED_FILES" | grep -Eiq "(spacesniff|File report|SpaceSniffer)"; then
+    echo ">> [heads-up] SpaceSniffer export detected — running content scan ..."
+fi
+
+# ---------- 4. Deep-scan staged text files ----------
+BLOCKED=0
+for file in $STAGED_FILES; do
+    if [ -f "$file" ]; then
+        if [[ "$file" =~ \.(txt|log|md|skill)$ ]]; then
+            # Scan the STAGED version (git show), not working-tree copy
+            if git show ":$file" 2>/dev/null | grep -qE "$SENSITIVE_PATTERNS"; then
+                echo "============================================"
+                echo "  SECURITY BLOCK: sensitive data in '$file'"
+                echo "============================================"
+                echo "  The staged file contains patterns matching"
+                echo "  the sensitive-pattern denylist."
+                echo ""
+                echo "  Action: run /sanitize to auto-redact, then"
+                echo "  re-stage and commit."
+                echo "============================================"
+                BLOCKED=1
+            fi
+        fi
+    fi
+done
+
+if [ "$BLOCKED" -eq 1 ]; then
+    exit 1
+fi
+
+exit 0
